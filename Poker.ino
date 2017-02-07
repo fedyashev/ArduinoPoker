@@ -13,12 +13,12 @@
 namespace hw {
 
 // Display settings
-const int LCD_RS = 8;  // 4
-const int LCD_ENABLE = 9;  // 5
-const int LCD_D0 = 4;  // 10
-const int LCD_D1 = 5;  // 11
-const int LCD_D2 = 6;  // 12
-const int LCD_D3 = 7;  // 13
+const int LCD_RS = 4;      // 8  // 4
+const int LCD_ENABLE = 5;  // 9  // 5
+const int LCD_D0 = 10;     // 4  //  10
+const int LCD_D1 = 11;     // 5  //  11
+const int LCD_D2 = 12;     // 6  //  12
+const int LCD_D3 = 13;     // 7  //  13
 const int LCD_ROWS = 2;
 const int LCD_COLS = 16;
 
@@ -173,11 +173,20 @@ class Poker {
 
   struct Player {
     Card hand[5] = { { '0', '0' },{ '0', '0' },{ '0', '0' },{ '0', '0' },{ '0', '0' } };
+    int hand_rank = 0;
     int coins = 0;
   };
 
   public:
     Poker() : player_(), arduino_(), bank_coins_(0), start_game_(false) {}
+    
+    Player& getPlayer() {return player_;}
+    const Player& getPlayer() const {return player_;}
+    
+    Player& getArduino() {return arduino_;}
+    const Player& getArduino() const {return arduino_;}
+    
+    int getBankCoins() const {return bank_coins_;}
 
     void startGame() {
       player_.coins = 500;
@@ -271,9 +280,13 @@ class IRightable {
     virtual void right() = 0;
 };
 
-class MainScreen : public Screen {
+class MainScreen : public Screen, public ISelectable {
   public:
-    MainScreen() : Screen() {}
+    MainScreen(Poker& poker) : Screen(), ISelectable(), poker_(poker) {}
+    
+    void select() override {
+      poker_.startGame();
+    }
     
     void show() override {
       hw::lcd.clear();
@@ -281,10 +294,12 @@ class MainScreen : public Screen {
       hw::lcd.print(1, 0, "-START NEW GAME-");
     }
     
-    void action(int button) override {}
+    void action(int button) override {
+      if (button == hw::Keypad::BUTTON_SELECT) select();
+    }
     
   private:
-  
+    Poker& poker_;
 };
 
 class TableScreen : public Screen {
@@ -307,20 +322,20 @@ class TableScreen : public Screen {
 
 class MoneyScreen : public Screen {
   public:
-    MoneyScreen() : Screen() {}
+    MoneyScreen(Poker& poker) : Screen(), poker_(poker) {}
     
     void show() override {
       hw::lcd.clear();
       hw::lcd.print(0, 0, "Player");
-      hw::lcd.print(1, 0, "0$");
+      hw::lcd.print(1, 0, poker_.getPlayer().coins + "$");
       hw::lcd.print(0, 9, "Arduino");
-      hw::lcd.print(1, 14, "0$");
+      hw::lcd.print(1, 14, poker_.getArduino().coins + "$");
     }
     
     void action(int button) override {}
     
   private:
-  
+    Poker& poker_;
 };
 
 class HelpScreen : public Screen {
@@ -378,9 +393,9 @@ class Controller {
     
   private:
     void createScreenStructure() {
-      Screen* main_screen = new MainScreen();
+      Screen* main_screen = new MainScreen(poker_);
       Screen* tabel_screen = new TableScreen(poker_);
-      Screen* money_screen = new MoneyScreen();
+      Screen* money_screen = new MoneyScreen(poker_);
       Screen* help_screen = new HelpScreen();
       Screen* author_screen = new AuthorScreen();
       
