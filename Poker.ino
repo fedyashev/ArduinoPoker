@@ -25,7 +25,7 @@ const int LCD_COLS = 16;
 // Keypad settings
 const int KEYPAD_PIN = 0;
 
-// Chars
+// Glyphs
 byte card_backside[8] = {
   B11111,
   B11111,
@@ -81,18 +81,25 @@ byte club[8] = {
   B00000,
 };
 
+// Card suits
+const int SUIT_HEART = 0;
+const int SUIT_DIAMOND = 1;
+const int SUIT_SPADE = 2;
+const int SUIT_CLUB = 3;
+const int CARD_BACKSIDE = 4;
+
 class Display {
   public:
     Display() : lcd_(LCD_RS, LCD_ENABLE, LCD_D0, LCD_D1, LCD_D2, LCD_D3) {
       lcd_.begin(LCD_COLS, LCD_ROWS);
-      lcd_.createChar(0, card_backside);
-      lcd_.createChar(1, heart);
-      lcd_.createChar(2, diamond);
-      lcd_.createChar(3, spade);
-      lcd_.createChar(4, club);
+      lcd_.createChar(SUIT_HEART, heart);
+      lcd_.createChar(SUIT_DIAMOND, diamond);
+      lcd_.createChar(SUIT_SPADE, spade);
+      lcd_.createChar(SUIT_CLUB, club);
+      lcd_.createChar(CARD_BACKSIDE, card_backside);
     }
 
-    LiquidCrystal getLCD() { return lcd_; }
+    LiquidCrystal& getLCD() { return lcd_; }
 
     template<typename T>
     void print(int row, int col, const T& val) {
@@ -162,24 +169,26 @@ class Keypad {
 
 namespace Game {
 
-class Poker {
+char card_rank[13] = {'2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'};
 
-  char card_rank[13] = {'2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'};
+struct Card {
+  uint8_t suit = 0;
+  uint8_t rank = 0;
+};
 
-  struct Card {
-    char suit;
-    char rank;
-  };
+struct Player {
+  Card hand[5] = { {0, 8}, {1, 9}, {2, 10}, {3, 11}, {0, 12} };
+  int hand_rank = 0;
+  int coins = 0;
+};
 
-  struct Player {
-    Card hand[5] = { { '0', '0' },{ '0', '0' },{ '0', '0' },{ '0', '0' },{ '0', '0' } };
-    int hand_rank = 0;
-    int coins = 0;
-  };
-
+class PokerSingleton {
   public:
-    Poker() : player_(), arduino_(), bank_coins_(0), start_game_(false) {}
-    
+    static PokerSingleton& getInstance() {
+      if (!instance_) instance_ = new PokerSingleton();
+      return *instance_;
+    }
+  
     Player& getPlayer() {return player_;}
     const Player& getPlayer() const {return player_;}
     
@@ -196,37 +205,53 @@ class Poker {
     }
 
     void startTurn() {}
-    void dealCards() {}
-    void printPlayerHand() {
-      if (start_game_) {
-        for (uint8_t i = 0; i < 5; ++i) {
-          
+    
+    void dealCards() {
+      Card hands[10];
+      uint8_t i = 0;
+      while (i < 13) {
+        hands[i] = {random(4), random(13)};
+        if (!i) {
+          ++i;
+          continue;
+        };
+        bool is_card_unique = true;
+        for (uint8_t j = 0; j < i; ++j) {
+          if (hand[i].suit == hand[i].suit && hand[j].rank == hand[j].rank) {
+            is_card_unique = false;
+            break;
+          }
         }
-      } else {
-        hw::lcd.printGlyph(0, 0, 0);
-        hw::lcd.printGlyph(0, 1, 0);
-        hw::lcd.printGlyph(0, 2, 0);
-        hw::lcd.printGlyph(0, 3, 0);
-        hw::lcd.printGlyph(0, 4, 0);
-        hw::lcd.printGlyph(1, 0, 0);
-        hw::lcd.printGlyph(1, 1, 0);
-        hw::lcd.printGlyph(1, 2, 0);
-        hw::lcd.printGlyph(1, 3, 0);
-        hw::lcd.printGlyph(1, 4, 0);
+        if (is_card_unique) ++i;
+      }
+      
+    }
+    
+    void printClosedCard(uint8_t col) {
+      hw::lcd.printGlyph(0, col, hw::CARD_BACKSIDE);      
+      hw::lcd.printGlyph(1, col, hw::CARD_BACKSIDE);
+    }
+    
+    void printOpenedCard(uint8_t col, const Card& card) {
+      if (card.suit < 0 || card.suit > 3 || card.rank < 0 || card.rank > 12) printClosedCard(col);
+      hw::lcd.print(0, col, card_rank[card.rank]);
+      hw::lcd.printGlyph(1, col, card.suit);      
+    }
+    
+    void printPlayerHand() {
+      for (uint8_t i = 0; i < 5; ++i) {
+        if (start_game_) {
+          printOpenedCard(i, player_.hand[i]);
+        } else {
+          printClosedCard(i);
+        }
       }
     }
     
     void printArduinoCloseHand() {
-      hw::lcd.printGlyph(0, 11, 0);
-      hw::lcd.printGlyph(0, 12, 0);
-      hw::lcd.printGlyph(0, 13, 0);
-      hw::lcd.printGlyph(0, 14, 0);
-      hw::lcd.printGlyph(0, 15, 0);
-      hw::lcd.printGlyph(1, 11, 0);
-      hw::lcd.printGlyph(1, 12, 0);
-      hw::lcd.printGlyph(1, 13, 0);
-      hw::lcd.printGlyph(1, 14, 0);
-      hw::lcd.printGlyph(1, 15, 0);
+      for (uint8_t i = 0; i < 5; ++i) {
+        printClosedCard(11 + i);
+      }
     }
 
     void printArduinoOpenHand() {}
@@ -238,6 +263,11 @@ class Poker {
     void arduinoOpen() {}
 
   private:
+    PokerSingleton() : player_(), arduino_(), bank_coins_(0), start_game_(false) {}
+    PokerSingleton(const PokerSingleton& poker) {}
+  
+    static PokerSingleton* instance_;
+  
     Player player_;
     Player arduino_;
     int bank_coins_;
@@ -250,42 +280,42 @@ class Screen {
     virtual ~Screen() {}
 
     Screen* getPrev() { return prev_; }
-    Screen* getNext() { return next_; }
+    const Screen* getPrev() const {return prev_;}
     void setPrev(Screen* prev) { prev_ = prev; }
+    
+    Screen* getNext() { return next_; }
+    const Screen* getNext() const {return next_;}
     void setNext(Screen* next) { next_ = next; }
     
+    virtual Screen* Select() {return 0;}
+    virtual Screen* Left() {return 0;}
+    virtual Screen* Right() {return 0;}
+    virtual Screen* Up() {return (prev_ ? prev_ : 0);}
+    virtual Screen* Down() {return (next_ ? next_ : 0);}
+    
     virtual void show() = 0;
-    virtual void action(int button) = 0;
-
+    
+    Screen* action(int button) {
+      switch (button) {
+        case hw::Keypad::BUTTON_SELECT : return Select();
+        case hw::Keypad::BUTTON_LEFT : return Left();
+        case hw::Keypad::BUTTON_RIGHT : return Right();
+        case hw::Keypad::BUTTON_UP : return Up();
+        case hw::Keypad::BUTTON_DOWN : return Down();
+        default : return 0;
+      }
+    };
+    
   private:
     Screen* prev_;
     Screen* next_;
 };
 
-class ISelectable {
+class MainScreen : public Screen {
   public:
-    virtual ~ISelectable() {}
-    virtual void select() = 0;
-};
-
-class ILeftable {
-  public:
-    virtual ~ILeftable() {}
-    virtual void left() = 0;
-};
-
-class IRightable {
-  public:
-    virtual ~IRightable() {}
-    virtual void right() = 0;
-};
-
-class MainScreen : public Screen, public ISelectable {
-  public:
-    MainScreen(Poker& poker) : Screen(), ISelectable(), poker_(poker) {}
-    
-    void select() override {
-      poker_.startGame();
+    Screen* Select() {
+      PokerSingleton::getInstance().startGame();
+      return getNext();
     }
     
     void show() override {
@@ -293,99 +323,71 @@ class MainScreen : public Screen, public ISelectable {
       hw::lcd.print(0, 6, "POKER");
       hw::lcd.print(1, 0, "-START NEW GAME-");
     }
-    
-    void action(int button) override {
-      if (button == hw::Keypad::BUTTON_SELECT) select();
-    }
-    
-  private:
-    Poker& poker_;
 };
 
 class TableScreen : public Screen {
   public:
-    TableScreen(Poker& poker) : Screen(), poker_(poker) {}
+    Screen* Select() {
+      return 0;
+    }
     
+    Screen* Left() {
+      return 0;
+    }
+    
+    Screen* Right() {
+      return 0;
+    }
+  
     void show() override {
       hw::lcd.clear();
-      poker_.printPlayerHand();
-      poker_.printArduinoCloseHand();
+      PokerSingleton::getInstance().printPlayerHand();
+      PokerSingleton::getInstance().printArduinoCloseHand();
       hw::lcd.print(0, 6, "BANK");
       hw::lcd.print(1, 6, "0$");
     }
-    
-    void action(int button) {}
-    
-  private:
-    Poker& poker_;
 };
 
 class MoneyScreen : public Screen {
   public:
-    MoneyScreen(Poker& poker) : Screen(), poker_(poker) {}
-    
     void show() override {
       hw::lcd.clear();
       hw::lcd.print(0, 0, "Player");
-      hw::lcd.print(1, 0, poker_.getPlayer().coins + "$");
+      hw::lcd.print(1, 0, PokerSingleton::getInstance().getPlayer().coins + "$");
       hw::lcd.print(0, 9, "Arduino");
-      hw::lcd.print(1, 14, poker_.getArduino().coins + "$");
+      hw::lcd.print(1, 14, PokerSingleton::getInstance().getArduino().coins + "$");
     }
-    
-    void action(int button) override {}
-    
-  private:
-    Poker& poker_;
 };
 
 class HelpScreen : public Screen {
   public:
-    HelpScreen() : Screen() {}
-    
     void show() override {
       hw::lcd.clear();
       hw::lcd.print(0, 0, "S-open L-pass");
       hw::lcd.print(1, 0, "R-add U/D-scroll");
     }
-    
-    void action(int button) override {}
 };
 
 class AuthorScreen : public Screen {
   public:
-    AuthorScreen() : Screen() {}
-    
     void show() override {
       hw::lcd.clear();
       hw::lcd.print(0, 0, "Fedyashev");
       hw::lcd.print(1, 0, "Andrei");
       hw::lcd.print(1, 12, "2017");
     }
-    
-    void action(int button) override {}
 };
 
 class Controller {
   public:
-    Controller() : current_(0), poker_() {createScreenStructure();}
+    Controller() : current_(0) {createScreenStructure();}
     ~Controller() {deleteScreenStructure();}
     
     void run() {
-      int button = hw::keypad.pressedButton();
-      switch (button) {
-        case hw::Keypad::BUTTON_UP :
-          current_ = current_->getPrev();
-          current_->show();
-          break;
-        case hw::Keypad::BUTTON_DOWN :
-          current_ = current_->getNext();
-          current_->show();
-          break;
-        case hw::Keypad::BUTTON_SELECT:
-        case hw::Keypad::BUTTON_LEFT:
-        case hw::Keypad::BUTTON_RIGHT:
-          current_->action(button);
-          break;
+      Screen* screen = current_ -> action(hw::keypad.pressedButton());
+      if (screen) {
+        current_ = screen;
+        current_ -> show();
       }
     }
     
@@ -393,9 +395,9 @@ class Controller {
     
   private:
     void createScreenStructure() {
-      Screen* main_screen = new MainScreen(poker_);
-      Screen* tabel_screen = new TableScreen(poker_);
-      Screen* money_screen = new MoneyScreen(poker_);
+      Screen* main_screen = new MainScreen();
+      Screen* tabel_screen = new TableScreen();
+      Screen* money_screen = new MoneyScreen();
       Screen* help_screen = new HelpScreen();
       Screen* author_screen = new AuthorScreen();
       
@@ -428,15 +430,16 @@ class Controller {
     }
   
     Screen* current_;
-    Poker poker_;
 };
 
 };  // namespace Game
 ///////////////////////////////////////////////////////////////////////////////
 
+Game::PokerSingleton* Game::PokerSingleton::instance_ = 0;
 Game::Controller controller;
 
 void setup() {
+  randomSeed(analogRead(0));
   controller.showScreen();
 }
 
