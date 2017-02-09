@@ -13,12 +13,12 @@
 namespace hw {
 
 // Display settings
-const int LCD_RS = 4;      // 8  // 4
-const int LCD_ENABLE = 5;  // 9  // 5
-const int LCD_D0 = 10;     // 4  //  10
-const int LCD_D1 = 11;     // 5  //  11
-const int LCD_D2 = 12;     // 6  //  12
-const int LCD_D3 = 13;     // 7  //  13
+const int LCD_RS = 8;      // 8  // 4
+const int LCD_ENABLE = 9;  // 9  // 5
+const int LCD_D0 = 4;     // 4  //  10
+const int LCD_D1 = 5;     // 5  //  11
+const int LCD_D2 = 6;     // 6  //  12
+const int LCD_D3 = 7;     // 7  //  13
 const int LCD_ROWS = 2;
 const int LCD_COLS = 16;
 
@@ -172,13 +172,13 @@ namespace Game {
 char card_rank[13] = {'2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'};
 
 struct Card {
-  uint8_t suit = 0;
-  uint8_t rank = 0;
+  int suit = 0;
+  int rank = 0;
 };
 
 struct Player {
-  Card hand[5] = { {0, 8}, {1, 9}, {2, 10}, {3, 11}, {0, 12} };
-  int hand_rank = 0;
+  Card hand[5];// = { {0, 8}, {1, 9}, {2, 10}, {3, 11}, {0, 12} };
+  double hand_rank = 0;
   int coins = 0;
 };
 
@@ -197,34 +197,198 @@ class PokerSingleton {
     
     int getBankCoins() const {return bank_coins_;}
 
+    void printMessage(const String& line1, const String& line2) {
+      hw::lcd.print(0, 5, line1);
+      hw::lcd.print(1, 5, line2);
+    }
+
+    void printBank() {
+      hw::lcd.print(0, 6, "BANK");
+      hw::lcd.print(1, 6, bank_coins_);
+    }
+
     void startGame() {
       player_.coins = 500;
       arduino_.coins = 500;
       bank_coins_ = 0;
       start_game_ = true;
+      startTurn();
     }
 
-    void startTurn() {}
+    void startTurn() {
+      dealCards();
+      player_.coins -= 10;
+      arduino_.coins -= 10;
+      bank_coins_ = 20;
+    }
+
+    void endTurn() {
+      if (player_.hand_rank > arduino_.hand_rank) {
+        printMessage("< WIN ", "      ");
+        player_.coins += bank_coins_;
+      } else if (player_.hand_rank < arduino_.hand_rank) {
+        printMessage(" WIN >", "      ");
+        arduino_.coins += bank_coins_;
+      } else {
+        printMessage(" DRAW ", "      ");
+        player_.coins += bank_coins_ / 2;
+        arduino_.coins += bank_coins_ / 2;
+      }
+      bank_coins_ = 0;
+    }
+
+    void fillRateArray(int* rate_array, Card* hand) {
+      for (uint8_t i = 0; i < 5; ++i) {
+        int count = 0;
+        for (uint8_t j = 0; j < 5; ++j) {
+          if (hand[i].rank == hand[j].rank) ++count;
+        }
+        rate_array[i] = count * 100 + hand[i].rank;
+      }
+    }
+
+    bool isOnePair(Card* hand) {
+      int rate_array[5];
+      fillRateArray(rate_array, hand);
+      int count = 0;
+      for (int i = 0; i < 5; ++i) {
+        if ((rate_array[i] >= 200) && (rate_array[i] < 300)) ++count;
+      }
+      return count == 2;
+    }
+
+    bool isTwoPairs(Card* hand) {
+      int rate_array[5];
+      fillRateArray(rate_array, hand);
+      int count = 0;
+      for (int i = 0; i < 5; ++i) {
+        if ((rate_array[i] >= 200) && (rate_array[i] < 300)) ++count;
+      }
+      return count == 4;
+    }
+
+    bool isSet(Card* hand) {
+      int rate_array[5];
+      fillRateArray(rate_array, hand);
+      for (int i = 0; i < 5; ++i) {
+        if (rate_array[i] >= 300 && rate_array[i] < 400) return true;
+      }
+      return false;
+    }
+
+    bool isStraight(Card* hand) {
+      int num = hand[0].rank;
+      if (num < 6) return false;
+      for (int i = 1; i < 5; ++i) {
+        if (hand[i].rank == num - 1) {
+          --num;
+        } else {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    bool isFlush(Card* hand) {
+      int suit = hand[0].suit;
+      for (int i = 1; i < 5; ++i) {
+        if (hand[i].suit != suit) return false;
+      }
+      return true;
+    }
+
+    bool isFullHouse(Card* hand) {
+      return isOnePair(hand) && isSet(hand);
+    }
+
+    bool isCare(Card* hand) {
+      int rate_array[5];
+      fillRateArray(rate_array, hand);
+      for (int i = 0; i < 5; ++i) {
+        if (rate_array[i] >= 400) return true;
+      }
+      return false;
+    }
+
+    bool isFlushStraight(Card* hand) {
+      return isFlush(hand) && isStraight(hand);
+    }
+
+    bool isFlushRoyal(Card* hand) {
+      return isFlushStraight(hand) && hand[0].rank == 12;
+    };
+
+    double handRank(Card* hand) {
+      double rank = 10000000000.0;
+      if (isFlushRoyal(hand)) rank *= 9;
+      else if (isFlushStraight(hand)) rank *= 8;
+      else if (isCare(hand)) rank *= 7;
+      else if (isFullHouse(hand)) rank *= 6;
+      else if (isFlush(hand)) rank *= 5;
+      else if (isStraight(hand)) rank *= 4;
+      else if (isSet(hand)) rank *= 3;
+      else if (isTwoPairs(hand)) rank *= 2;
+      else if (isOnePair(hand)) rank *= 1;
+      else rank = 0;
+      rank += hand[0].rank * 100000000.0 + hand[1].rank * 1000000.0 + hand[2].rank * 10000.0 + hand[3].rank * 100.0 + hand[4].rank;
+      /*for (int i = 0; i < 5; ++i) {
+        rank += i * 13 + hand[i].rank;
+      }*/
+      return rank;
+    };
+
+    void sortHand(Card* hand) {
+      int rate_array[5];
+      fillRateArray(rate_array, hand);
+      for (uint8_t i = 0; i < 5; ++i) {
+        for (uint8_t j = 0; j < 5; ++j) {
+          if (rate_array[i] > rate_array[j]) {
+            uint8_t tmp = hand[i].suit;
+            hand[i].suit = hand[j].suit;
+            hand[j].suit = tmp;
+            
+            tmp = hand[i].rank;
+            hand[i].rank = hand[j].rank;
+            hand[j].rank = tmp;
+
+            tmp = rate_array[i];
+            rate_array[i] = rate_array[j];
+            rate_array[j] = tmp;
+          }
+        }
+      }
+    }
     
     void dealCards() {
       Card hands[10];
-      uint8_t i = 0;
-      while (i < 13) {
-        hands[i] = {random(4), random(13)};
+      int i = 0;
+      while (i < 10) {
+        srand((unsigned int)micros());
+        hands[i].suit = rand() / 4 % 4;
+        hands[i].rank = rand() % 13;
         if (!i) {
           ++i;
           continue;
         };
         bool is_card_unique = true;
-        for (uint8_t j = 0; j < i; ++j) {
-          if (hand[i].suit == hand[i].suit && hand[j].rank == hand[j].rank) {
+        for (int j = 0; j < i; ++j) {
+          if (hands[i].suit == hands[j].suit && hands[i].rank == hands[j].rank) {
             is_card_unique = false;
             break;
           }
         }
         if (is_card_unique) ++i;
       }
-      
+      for (int i = 0; i < 5; ++i) {
+        player_.hand[i].suit = hands[i].suit;
+        player_.hand[i].rank = hands[i].rank;
+        arduino_.hand[i].suit = hands[5 + i].suit;
+        arduino_.hand[i].rank = hands[5 + i].rank;
+      }
+      sortHand(player_.hand);
+      sortHand(arduino_.hand);
+      player_.hand_rank = handRank(player_.hand);
+      arduino_.hand_rank = handRank(arduino_.hand);
     }
     
     void printClosedCard(uint8_t col) {
@@ -257,7 +421,16 @@ class PokerSingleton {
     void printArduinoOpenHand() {}
     void playerAdd() {}
     void playerPass() {}
-    void playerOpen() {}
+
+    void playerOpen() {
+      printMessage("<OPEN ", "      ");
+      delay(1000);
+      for (int i = 0; i < 5; ++i) {
+        printOpenedCard(11 + i, arduino_.hand[i]);
+        delay(300);
+      }
+    }
+
     void arduinoAdd() {}
     void arduinoPass() {}
     void arduinoOpen() {}
@@ -328,7 +501,15 @@ class MainScreen : public Screen {
 class TableScreen : public Screen {
   public:
     Screen* Select() {
-      return 0;
+      PokerSingleton::getInstance().playerOpen();
+      delay(500);
+      PokerSingleton::getInstance().endTurn();
+      delay(2000);
+      //hw::lcd.print(0, 0, PokerSingleton::getInstance().getPlayer().hand_rank);
+      //hw::lcd.print(1, 0, PokerSingleton::getInstance().getArduino().hand_rank);
+      //delay(1000);
+      PokerSingleton::getInstance().startTurn();
+      return this;
     }
     
     Screen* Left() {
@@ -343,8 +524,7 @@ class TableScreen : public Screen {
       hw::lcd.clear();
       PokerSingleton::getInstance().printPlayerHand();
       PokerSingleton::getInstance().printArduinoCloseHand();
-      hw::lcd.print(0, 6, "BANK");
-      hw::lcd.print(1, 6, "0$");
+      PokerSingleton::getInstance().printBank();
     }
 };
 
@@ -353,9 +533,9 @@ class MoneyScreen : public Screen {
     void show() override {
       hw::lcd.clear();
       hw::lcd.print(0, 0, "Player");
-      hw::lcd.print(1, 0, PokerSingleton::getInstance().getPlayer().coins + "$");
+      hw::lcd.print(1, 0, PokerSingleton::getInstance().getPlayer().coins);
       hw::lcd.print(0, 9, "Arduino");
-      hw::lcd.print(1, 14, PokerSingleton::getInstance().getArduino().coins + "$");
+      hw::lcd.print(1, 12, PokerSingleton::getInstance().getArduino().coins);
     }
 };
 
@@ -439,7 +619,7 @@ Game::PokerSingleton* Game::PokerSingleton::instance_ = 0;
 Game::Controller controller;
 
 void setup() {
-  randomSeed(analogRead(0));
+  //randomSeed(analogRead(0));
   controller.showScreen();
 }
 
