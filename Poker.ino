@@ -13,12 +13,12 @@
 namespace hw {
 
 // Display settings
-const int LCD_RS = 8;      // 8  // 4
-const int LCD_ENABLE = 9;  // 9  // 5
-const int LCD_D0 = 4;     // 4  //  10
-const int LCD_D1 = 5;     // 5  //  11
-const int LCD_D2 = 6;     // 6  //  12
-const int LCD_D3 = 7;     // 7  //  13
+const int LCD_RS = 4;      // 8  // 4
+const int LCD_ENABLE = 5;  // 9  // 5
+const int LCD_D0 = 10;     // 4  //  10
+const int LCD_D1 = 11;     // 5  //  11
+const int LCD_D2 = 12;     // 6  //  12
+const int LCD_D3 = 13;     // 7  //  13
 const int LCD_ROWS = 2;
 const int LCD_COLS = 16;
 
@@ -196,6 +196,7 @@ class PokerSingleton {
     const Player& getArduino() const {return arduino_;}
     
     int getBankCoins() const {return bank_coins_;}
+    bool isGameStarted() const {return start_game_;}
 
     void printMessage(const String& line1, const String& line2) {
       hw::lcd.print(0, 5, line1);
@@ -208,11 +209,20 @@ class PokerSingleton {
     }
 
     void startGame() {
-      player_.coins = 500;
-      arduino_.coins = 500;
+      player_.coins = 20;
+      arduino_.coins = 20;
       bank_coins_ = 0;
       start_game_ = true;
       startTurn();
+    }
+    
+    void endGame() {
+      if (!player_.coins) {
+        printMessage(" GAME ", " OVER ");
+      } else {
+        printMessage(" YOU  ", " WIN  ");
+      }
+      start_game_ = false;
     }
 
     void startTurn() {
@@ -419,7 +429,17 @@ class PokerSingleton {
     }
 
     void printArduinoOpenHand() {}
-    void playerAdd() {}
+    
+    void playerAdd() {
+      if (player_.coins < 10) {
+        printMessage("  NO  ", " CASH ");
+      } else {
+        player_.coins -= 10;
+        bank_coins_ += 10;
+        printMessage("< ADD ", " +10$ ");      
+      }
+    }
+    
     void playerPass() {}
 
     void playerOpen() {
@@ -501,30 +521,46 @@ class MainScreen : public Screen {
 class TableScreen : public Screen {
   public:
     Screen* Select() {
+      if (!PokerSingleton::getInstance().isGameStarted()) {
+        PokerSingleton::getInstance().startGame();
+        return this;
+      }
       PokerSingleton::getInstance().playerOpen();
       delay(500);
       PokerSingleton::getInstance().endTurn();
       delay(2000);
-      //hw::lcd.print(0, 0, PokerSingleton::getInstance().getPlayer().hand_rank);
-      //hw::lcd.print(1, 0, PokerSingleton::getInstance().getArduino().hand_rank);
-      //delay(1000);
-      PokerSingleton::getInstance().startTurn();
+      if (PokerSingleton::getInstance().getPlayer().coins && PokerSingleton::getInstance().getArduino().coins) {
+        PokerSingleton::getInstance().startTurn();
+      } else {
+        PokerSingleton::getInstance().endGame();
+        delay(2000);
+      }
       return this;
     }
     
     Screen* Left() {
+      if (!PokerSingleton::getInstance().isGameStarted()) return 0;
       return 0;
     }
     
     Screen* Right() {
-      return 0;
+      if (!PokerSingleton::getInstance().isGameStarted()) return 0;
+      PokerSingleton::getInstance().playerAdd();
+      delay(1000);
+      return this;
     }
   
     void show() override {
       hw::lcd.clear();
-      PokerSingleton::getInstance().printPlayerHand();
-      PokerSingleton::getInstance().printArduinoCloseHand();
-      PokerSingleton::getInstance().printBank();
+      if (!PokerSingleton::getInstance().isGameStarted()) {
+        hw::lcd.print(0, 2, "Press SELECT");
+        hw::lcd.print(1, 2, "to start game");
+        return;
+      } else {
+        PokerSingleton::getInstance().printPlayerHand();
+        PokerSingleton::getInstance().printArduinoCloseHand();
+        PokerSingleton::getInstance().printBank();
+      }
     }
 };
 
@@ -619,7 +655,6 @@ Game::PokerSingleton* Game::PokerSingleton::instance_ = 0;
 Game::Controller controller;
 
 void setup() {
-  //randomSeed(analogRead(0));
   controller.showScreen();
 }
 
