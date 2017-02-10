@@ -246,6 +246,15 @@ class PokerSingleton {
       }
       bank_coins_ = 0;
     }
+    
+    void checkTurnResult() {
+      if (player_.coins && arduino_.coins) {
+        startTurn();
+      } else {
+        endGame();
+        delay(2000);
+      }    
+    }
 
     void fillRateArray(int* rate_array, Card* hand) {
       for (uint8_t i = 0; i < 5; ++i) {
@@ -428,7 +437,12 @@ class PokerSingleton {
       }
     }
 
-    void printArduinoOpenHand() {}
+    void printArduinoOpenHand() {
+      for (int i = 0; i < 5; ++i) {
+        printOpenedCard(11 + i, arduino_.hand[i]);
+        delay(300);
+      }
+    }
     
     void playerAdd() {
       if (player_.coins < 10) {
@@ -440,20 +454,59 @@ class PokerSingleton {
       }
     }
     
-    void playerPass() {}
+    void playerPass() {
+      printMessage("<PASS ", "      ");
+      arduino_.coins += bank_coins_;
+      bank_coins_ = 0;
+    }
 
     void playerOpen() {
       printMessage("<OPEN ", "      ");
-      delay(1000);
-      for (int i = 0; i < 5; ++i) {
-        printOpenedCard(11 + i, arduino_.hand[i]);
-        delay(300);
+    }
+
+    void arduinoTurn() {
+      if (arduino_.coins < 10) {
+        arduinoOpen();
+        endTurn();
+        delay(1000);
+        checkTurnResult();
+        delay(1000);
+        return;
+      }
+      srand((unsigned int)micros());
+      int action = rand() % 10;
+      if (action < 6) {
+        arduinoAdd();
+        delay(1000);
+      } else if (action < 8) {
+        arduinoOpen();
+        endTurn();
+        delay(1000);
+        checkTurnResult();
+        delay(1000);
+      } else {
+        arduinoPass();
+        delay(1000);
+        checkTurnResult();
       }
     }
 
-    void arduinoAdd() {}
-    void arduinoPass() {}
-    void arduinoOpen() {}
+    void arduinoAdd() {
+      arduino_.coins -= 10;
+      bank_coins_ += 10;
+      printMessage(" ADD >", " +10$ ");
+    }
+    
+    void arduinoPass() {
+      player_.coins += bank_coins_;
+      bank_coins_ = 0;
+      printMessage(" PASS>", "      ");
+    }
+    
+    void arduinoOpen() {
+      printMessage(" OPEN>", "      ");
+      printArduinoOpenHand();
+    }
 
   private:
     PokerSingleton() : player_(), arduino_(), bank_coins_(0), start_game_(false) {}
@@ -526,27 +579,27 @@ class TableScreen : public Screen {
         return this;
       }
       PokerSingleton::getInstance().playerOpen();
-      delay(500);
+      delay(1000);
+      PokerSingleton::getInstance().printArduinoOpenHand();
       PokerSingleton::getInstance().endTurn();
       delay(2000);
-      if (PokerSingleton::getInstance().getPlayer().coins && PokerSingleton::getInstance().getArduino().coins) {
-        PokerSingleton::getInstance().startTurn();
-      } else {
-        PokerSingleton::getInstance().endGame();
-        delay(2000);
-      }
+      PokerSingleton::getInstance().checkTurnResult();
       return this;
     }
     
     Screen* Left() {
-      if (!PokerSingleton::getInstance().isGameStarted()) return 0;
-      return 0;
+      if (!PokerSingleton::getInstance().isGameStarted() || PokerSingleton::getInstance().getPlayer().coins < 10) return 0;
+      PokerSingleton::getInstance().playerPass();
+      delay(1000);
+      PokerSingleton::getInstance().checkTurnResult();
+      return this;
     }
     
     Screen* Right() {
-      if (!PokerSingleton::getInstance().isGameStarted()) return 0;
+      if (!PokerSingleton::getInstance().isGameStarted() || PokerSingleton::getInstance().getPlayer().coins < 10) return 0;
       PokerSingleton::getInstance().playerAdd();
       delay(1000);
+      PokerSingleton::getInstance().arduinoTurn();
       return this;
     }
   
