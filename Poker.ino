@@ -13,12 +13,12 @@
 namespace hw {
 
 // Display settings
-const int LCD_RS = 4;      // 8  // 4
-const int LCD_ENABLE = 5;  // 9  // 5
-const int LCD_D0 = 10;     // 4  //  10
-const int LCD_D1 = 11;     // 5  //  11
-const int LCD_D2 = 12;     // 6  //  12
-const int LCD_D3 = 13;     // 7  //  13
+const int LCD_RS = 8;      // 8  // 4
+const int LCD_ENABLE = 9;  // 9  // 5
+const int LCD_D0 = 4;     // 4  //  10
+const int LCD_D1 = 5;     // 5  //  11
+const int LCD_D2 = 6;     // 6  //  12
+const int LCD_D3 = 7;     // 7  //  13
 const int LCD_ROWS = 2;
 const int LCD_COLS = 16;
 
@@ -209,8 +209,8 @@ class PokerSingleton {
     }
 
     void startGame() {
-      player_.coins = 20;
-      arduino_.coins = 20;
+      player_.coins = 100;
+      arduino_.coins = 100;
       bank_coins_ = 0;
       start_game_ = true;
       startTurn();
@@ -467,27 +467,30 @@ class PokerSingleton {
     void arduinoTurn() {
       if (arduino_.coins < 10) {
         arduinoOpen();
+        delay(1000);
         endTurn();
-        delay(1000);
+        delay(2000);
         checkTurnResult();
-        delay(1000);
+        //delay(1000);
         return;
       }
       srand((unsigned int)micros());
       int action = rand() % 10;
       if (action < 6) {
         arduinoAdd();
-        delay(1000);
+        delay(2000);
       } else if (action < 8) {
         arduinoOpen();
+        delay(1000);
         endTurn();
-        delay(1000);
+        delay(2000);
         checkTurnResult();
-        delay(1000);
+        //delay(1000);
       } else {
         arduinoPass();
-        delay(1000);
+        delay(2000);
         checkTurnResult();
+        //delay(1000);
       }
     }
 
@@ -505,6 +508,7 @@ class PokerSingleton {
     
     void arduinoOpen() {
       printMessage(" OPEN>", "      ");
+      delay(1000);
       printArduinoOpenHand();
     }
 
@@ -590,7 +594,7 @@ class TableScreen : public Screen {
     Screen* Left() {
       if (!PokerSingleton::getInstance().isGameStarted() || PokerSingleton::getInstance().getPlayer().coins < 10) return 0;
       PokerSingleton::getInstance().playerPass();
-      delay(1000);
+      delay(2000);
       PokerSingleton::getInstance().checkTurnResult();
       return this;
     }
@@ -598,7 +602,7 @@ class TableScreen : public Screen {
     Screen* Right() {
       if (!PokerSingleton::getInstance().isGameStarted() || PokerSingleton::getInstance().getPlayer().coins < 10) return 0;
       PokerSingleton::getInstance().playerAdd();
-      delay(1000);
+      delay(2000);
       PokerSingleton::getInstance().arduinoTurn();
       return this;
     }
